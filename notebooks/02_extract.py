@@ -9,8 +9,8 @@
 
 # COMMAND ----------
 
-# %pip install "openai>=1.40" "pydantic>=2.5" "mlflow>=3.1.0" python-dotenv
-# dbutils.library.restartPython()
+# MAGIC %pip install --upgrade "openai>=1.40" "pydantic>=2.5" "mlflow>=3.1.0" python-dotenv
+# MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------
 
@@ -22,9 +22,18 @@ import pandas as pd
 import mlflow
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
+from packaging.version import Version
 from pyspark.sql import functions as F
 
 load_dotenv()
+
+print(f"MLflow version: {mlflow.__version__}")
+if Version(mlflow.__version__) < Version("3.1.0") or not hasattr(mlflow, "start_span"):
+    raise RuntimeError(
+        "STOP: MLflow tracing is not active in this Python kernel. "
+        "Run the first %pip cell, let dbutils.library.restartPython() restart, "
+        "then run this notebook from the top again."
+    )
 
 BRONZE_TABLE        = "pramaana.bronze.facilities_raw"
 SILVER_TABLE        = "pramaana.silver.facilities_extracted"
@@ -42,6 +51,10 @@ if not FULL_RUN:
 
 print(f"FULL_RUN={FULL_RUN} | DRY_RUN_LIMIT={DRY_RUN_LIMIT} | WORKERS={WORKERS}")
 print(f"Output table: {SILVER_TABLE}")
+if FULL_RUN:
+    print("FULL RUN ENABLED: this will process all remaining Bronze rows.")
+else:
+    print("SMOKE RUN ENABLED: this will process only the first DRY_RUN_LIMIT rows.")
 
 experiment_name = os.environ.get("MLFLOW_EXPERIMENT_NAME", "/pramaana")
 mlflow.set_experiment(experiment_name)
@@ -68,6 +81,7 @@ try:
     done_ids = set(spark.table(CHECKPOINT_TABLE).select("facility_id").toPandas()["facility_id"].tolist())
     print(f"Resuming: {len(done_ids):,} rows already processed, skipping them")
 except Exception:
+    print(f"No checkpoint table found yet: {CHECKPOINT_TABLE}")
     done_ids = set()
 
 todo_df = bronze_df[~bronze_df["facility_id"].isin(done_ids)].reset_index(drop=True)

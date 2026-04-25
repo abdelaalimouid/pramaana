@@ -32,6 +32,10 @@ pdf.columns = [c.strip() for c in pdf.columns]
 
 # COMMAND ----------
 
+# Convert object columns to string to avoid Arrow conversion issues
+for col in pdf.select_dtypes(include=['object']).columns:
+    pdf[col] = pdf[col].astype(str)
+
 # Convert to Spark DataFrame and write as Delta
 sdf = spark.createDataFrame(pdf)
 sdf.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(BRONZE_TABLE)
