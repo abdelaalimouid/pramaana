@@ -4,10 +4,15 @@ Every tool call, every agent step, every LLM invocation passes through here.
 This is what wins us the 10% UX/Transparency bucket.
 """
 import functools
+import os
 import mlflow
 from typing import Callable, Any
 
-mlflow.set_experiment("/Users/<YOUR_EMAIL>/pramaana")  # change to your email
+
+def _init_experiment() -> None:
+    """Set MLflow experiment from env; must be called after dotenv is loaded."""
+    experiment_name = os.environ.get("MLFLOW_EXPERIMENT_NAME", "/pramaana")
+    mlflow.set_experiment(experiment_name)
 
 
 def traced_tool(tool_name: str, span_type: str = "TOOL"):
