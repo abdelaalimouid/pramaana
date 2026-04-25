@@ -9,7 +9,7 @@
 
 # COMMAND ----------
 
-# %pip install openai tavily-python pydantic>=2.5 mlflow>=3.0.0
+# %pip install "openai>=1.40" "pydantic>=2.5" "mlflow>=3.1.0" python-dotenv
 # dbutils.library.restartPython()
 
 # COMMAND ----------
@@ -22,15 +22,26 @@ import pandas as pd
 import mlflow
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
+from pyspark.sql import functions as F
 
 load_dotenv()
 
 BRONZE_TABLE        = "pramaana.bronze.facilities_raw"
 SILVER_TABLE        = "pramaana.silver.facilities_extracted"
 CHECKPOINT_TABLE    = "pramaana.silver.facilities_extracted_ckpt"
-WORKERS             = 8     # concurrent LLM calls — raise if endpoint allows it
+FULL_RUN            = os.environ.get("PRAMAANA_FULL_EXTRACT", "0") == "1"
+DRY_RUN_LIMIT       = int(os.environ.get("PRAMAANA_EXTRACT_LIMIT", "25"))
+WORKERS             = int(os.environ.get("PRAMAANA_EXTRACT_WORKERS", "2"))
 CHECKPOINT_EVERY    = 500   # write partial results to Delta this often
-LOG_EVERY           = 100   # print progress this often
+LOG_EVERY           = 25    # print progress this often
+
+if not FULL_RUN:
+    SILVER_TABLE = "pramaana.silver.facilities_extracted_smoke"
+    CHECKPOINT_TABLE = "pramaana.silver.facilities_extracted_smoke_ckpt"
+    CHECKPOINT_EVERY = min(CHECKPOINT_EVERY, DRY_RUN_LIMIT)
+
+print(f"FULL_RUN={FULL_RUN} | DRY_RUN_LIMIT={DRY_RUN_LIMIT} | WORKERS={WORKERS}")
+print(f"Output table: {SILVER_TABLE}")
 
 experiment_name = os.environ.get("MLFLOW_EXPERIMENT_NAME", "/pramaana")
 mlflow.set_experiment(experiment_name)
@@ -38,7 +49,10 @@ mlflow.set_experiment(experiment_name)
 # COMMAND ----------
 
 import sys
-sys.path.insert(0, "/Workspace/Repos/abdelaalimouid/pramaana")  # adjust to your repo path
+REPO_PATH = os.environ.get("PRAMAANA_REPO_PATH", "/Workspace/Repos/abdelaalimouid/pramaana")
+if REPO_PATH not in sys.path:
+    sys.path.insert(0, REPO_PATH)
+print(f"Using repo path: {REPO_PATH}")
 
 from src.schemas.facility import RawFacilityRow
 from src.agents.extractor import extract
@@ -57,6 +71,8 @@ except Exception:
     done_ids = set()
 
 todo_df = bronze_df[~bronze_df["facility_id"].isin(done_ids)].reset_index(drop=True)
+if not FULL_RUN:
+    todo_df = todo_df.head(DRY_RUN_LIMIT).reset_index(drop=True)
 print(f"Rows to process: {len(todo_df):,}")
 
 # COMMAND ----------
@@ -77,9 +93,11 @@ def _row_to_raw(row_dict: dict, idx: int) -> tuple[str, RawFacilityRow]:
     clean = {}
     for field in _RAW_FIELDS:
         val = row_dict.get(field)
-        # pandas uses float NaN for missing values in mixed-type columns
-        if val is not None and isinstance(val, float) and math.isnan(val):
+        # pandas uses NaN/NaT for missing values in mixed-type columns
+        if val is None or pd.isna(val):
             val = None
+        elif isinstance(val, pd.Timestamp):
+            val = val.isoformat()
         clean[field] = val
     return facility_id, RawFacilityRow(**clean)
 
@@ -104,7 +122,13 @@ errors       = []
 rows_list    = list(todo_df.to_dict(orient="records"))
 total        = len(rows_list)
 
-with mlflow.start_run(run_name="phase2_extraction"):
+with mlflow.start_span(name="phase2_extraction_batch", span_type="CHAIN") as batch_span:
+    batch_span.set_inputs({
+        "total": total,
+        "full_run": FULL_RUN,
+        "workers": WORKERS,
+        "output_table": SILVER_TABLE,
+    })
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         futures = {
             pool.submit(_process_one, (i, row)): i
@@ -141,9 +165,11 @@ with mlflow.start_run(run_name="phase2_extraction"):
         print(f"  [CHECKPOINT] final flush of {len(results)} rows")
         results.clear()
 
-    mlflow.log_metric("rows_extracted", completed - len(errors))
-    mlflow.log_metric("extraction_errors", len(errors))
-    mlflow.log_metric("error_rate_pct", round(100 * len(errors) / max(1, total), 2))
+    batch_span.set_outputs({
+        "rows_extracted": completed - len(errors),
+        "extraction_errors": len(errors),
+        "error_rate_pct": round(100 * len(errors) / max(1, total), 2),
+    })
 
 print(f"\nExtraction complete: {completed - len(errors):,} OK, {len(errors):,} errors")
 
@@ -153,9 +179,9 @@ print(f"\nExtraction complete: {completed - len(errors):,} OK, {len(errors):,} e
 silver_df = (
     spark.table(CHECKPOINT_TABLE)
     .dropDuplicates(["facility_id"])
-    .filter("_error IS NULL OR _error = ''")
 )
-silver_df = silver_df.drop("_error") if "_error" in silver_df.columns else silver_df
+if "_error" in silver_df.columns:
+    silver_df = silver_df.filter("_error IS NULL OR _error = ''").drop("_error")
 
 silver_df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(SILVER_TABLE)
 
@@ -168,6 +194,7 @@ assert count >= total * 0.95, f"Too many failures: only {count} of {total} rows 
 # ── Quick sanity checks ───────────────────────────────────────────────────────
 display(spark.table(SILVER_TABLE).select(
     "facility_id", "name", "state", "extraction_confidence",
-    "equipment.has_icu", "capabilities.performs_dialysis",
-    "staffing.raw_evidence_span",
+    F.col("`equipment.has_icu`").alias("has_icu"),
+    F.col("`capabilities.performs_dialysis`").alias("performs_dialysis"),
+    F.col("`staffing.raw_evidence_span`").alias("staffing_evidence"),
 ).limit(10))

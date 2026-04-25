@@ -74,8 +74,23 @@ _EMPTY_EQUIPMENT = EquipmentClaim()
 _EMPTY_CAPABILITIES = CapabilityClaim()
 
 
-def _get_llm_client() -> tuple[OpenAI, str, bool]:
-    """Return (client, model_name, supports_json_mode).
+def _openai_fallback(reason: str) -> tuple[OpenAI, str, bool, str]:
+    """Create explicit OpenAI fallback client; serves IDP Innovation reliability."""
+    message = (
+        f"WARNING: Databricks-served LLM unavailable ({reason}). "
+        "Falling back to OpenAI GPT-4o-mini explicitly."
+    )
+    print(message)
+    warnings.warn(message, stacklevel=3)
+    fallback_model = os.environ.get("OPENAI_FALLBACK_MODEL", "gpt-4o-mini")
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY not set; cannot use explicit fallback model.")
+    return OpenAI(api_key=api_key), fallback_model, True, "openai"
+
+
+def _get_llm_client() -> tuple[OpenAI, str, bool, str]:
+    """Return (client, model_name, supports_json_mode, provider).
 
     Databricks-served Llama is primary; OpenAI GPT-4o-mini is the fallback.
     Llama endpoints on Databricks do not support response_format=json_object.
@@ -89,14 +104,9 @@ def _get_llm_client() -> tuple[OpenAI, str, bool]:
             base_url=f"{databricks_host}/serving-endpoints",
             api_key=databricks_token,
         )
-        return client, endpoint, False  # Llama does not support json_object mode
+        return client, endpoint, False, "databricks"  # Llama does not support json_object mode
 
-    warnings.warn(
-        "DATABRICKS_HOST/TOKEN not set — falling back to OpenAI GPT-4o-mini",
-        stacklevel=3,
-    )
-    fallback_model = os.environ.get("OPENAI_FALLBACK_MODEL", "gpt-4o-mini")
-    return OpenAI(api_key=os.environ["OPENAI_API_KEY"]), fallback_model, True
+    return _openai_fallback("DATABRICKS_HOST or DATABRICKS_TOKEN is not set")
 
 
 def _parse_llm_output(raw: str, facility_id: str) -> dict:
@@ -137,10 +147,40 @@ def _safe_model(model_cls, data: dict):
         return model_cls()
 
 
+def _call_llm(
+    client: OpenAI,
+    model: str,
+    supports_json_mode: bool,
+    provider: str,
+    prompt: str,
+    facility_id: str,
+) -> str:
+    """Call one chat model under an MLflow LLM span for trace transparency."""
+    call_kwargs = dict(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.0,
+        max_tokens=800,
+    )
+    if supports_json_mode:
+        call_kwargs["response_format"] = {"type": "json_object"}
+
+    with mlflow.start_span(name=f"llm_extraction_call::{provider}", span_type="LLM") as span:
+        span.set_inputs({"model": model, "provider": provider, "facility_id": facility_id})
+        try:
+            response = client.chat.completions.create(**call_kwargs)
+            raw_json = response.choices[0].message.content or ""
+            span.set_outputs({"raw_json_length": len(raw_json)})
+            return raw_json
+        except Exception as exc:
+            span.set_status("ERROR", description=str(exc))
+            raise
+
+
 @trace_agent_run("extractor")
 def extract(row: RawFacilityRow, facility_id: str) -> ExtractedFacility:
     """Call LLM to extract structured capability claims from raw facility text fields."""
-    client, model, supports_json_mode = _get_llm_client()
+    client, model, supports_json_mode, provider = _get_llm_client()
 
     prompt = _EXTRACTION_PROMPT.format(
         name=row.name,
@@ -153,20 +193,15 @@ def extract(row: RawFacilityRow, facility_id: str) -> ExtractedFacility:
         capability=row.capability or "",
     )
 
-    call_kwargs = dict(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.0,
-        max_tokens=800,
-    )
-    if supports_json_mode:
-        call_kwargs["response_format"] = {"type": "json_object"}
-
-    with mlflow.start_span(name="llm_extraction_call", span_type="LLM") as span:
-        span.set_inputs({"model": model, "facility_id": facility_id})
-        response = client.chat.completions.create(**call_kwargs)
-        raw_json = response.choices[0].message.content
-        span.set_outputs({"raw_json_length": len(raw_json or "")})
+    try:
+        raw_json = _call_llm(client, model, supports_json_mode, provider, prompt, facility_id)
+        extraction_model = model
+    except Exception as exc:
+        if provider != "databricks":
+            raise
+        client, model, supports_json_mode, provider = _openai_fallback(str(exc))
+        raw_json = _call_llm(client, model, supports_json_mode, provider, prompt, facility_id)
+        extraction_model = model
 
     parsed = _parse_llm_output(raw_json or "", facility_id)
 
@@ -182,6 +217,6 @@ def extract(row: RawFacilityRow, facility_id: str) -> ExtractedFacility:
         staffing=_safe_model(StaffingClaim, parsed.get("staffing") or {}),
         equipment=_safe_model(EquipmentClaim, parsed.get("equipment") or {}),
         capabilities=_safe_model(CapabilityClaim, parsed.get("capabilities") or {}),
-        extraction_model=model,
+        extraction_model=extraction_model,
         extraction_confidence=parsed.get("extraction_confidence", "medium"),
     )
