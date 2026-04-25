@@ -8,7 +8,7 @@ import warnings
 import mlflow
 import httpx
 from src.schemas.facility import RawFacilityRow, ExtractedFacility, StaffingClaim, EquipmentClaim, CapabilityClaim
-from src.tracing import trace_agent_run
+from src.tracing import record_span_error, trace_agent_run
 
 # Concrete JSON example keeps Llama on-schema better than schema prose alone.
 _EXTRACTION_PROMPT = """\
@@ -195,7 +195,7 @@ def _call_databricks_llm(host: str, token: str, endpoint: str, prompt: str, faci
             span.set_outputs({"raw_json_length": len(raw_json)})
             return raw_json
         except Exception as exc:
-            span.set_status("ERROR", description=str(exc))
+            record_span_error(span, exc)
             raise
 
 

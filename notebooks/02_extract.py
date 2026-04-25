@@ -186,6 +186,11 @@ with mlflow.start_span(name="phase2_extraction_batch", span_type="CHAIN") as bat
     })
 
 print(f"\nExtraction complete: {completed - len(errors):,} OK, {len(errors):,} errors")
+if completed == len(errors):
+    print("All extraction attempts failed. First 5 errors:")
+    for err in errors[:5]:
+        print(err)
+    raise RuntimeError("Smoke extraction produced 0 successful rows; not reading checkpoint table.")
 
 # COMMAND ----------
 

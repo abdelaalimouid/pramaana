@@ -42,6 +42,18 @@ def _trace_safe(value: Any) -> Any:
     return str(value)
 
 
+def record_span_error(span: Any, exc: Exception) -> None:
+    """Attach error details to an MLflow span without relying on version-specific status args."""
+    try:
+        span.set_outputs(_trace_safe({"error": str(exc), "error_type": type(exc).__name__}))
+    except Exception:
+        pass
+    try:
+        span.set_status("ERROR")
+    except Exception:
+        pass
+
+
 def traced_tool(tool_name: str, span_type: str = "TOOL"):
     """Decorator to trace any agent tool call.
     
@@ -61,7 +73,7 @@ def traced_tool(tool_name: str, span_type: str = "TOOL"):
                     span.set_outputs(_trace_safe({"result": result}))
                     return result
                 except Exception as e:
-                    span.set_status("ERROR", description=str(e))
+                    record_span_error(span, e)
                     raise
         return wrapper
     return decorator
