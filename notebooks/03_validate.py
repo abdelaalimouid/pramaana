@@ -219,5 +219,14 @@ print(f"Validation complete: {len(validated_results):,} OK, {len(errors):,} erro
 # COMMAND ----------
 
 val_df = spark.createDataFrame(pd.json_normalize(validated_results))
+for array_col in [
+    "internal_contradictions",
+    "tavily_corroboration_evidence",
+    "tavily_queries_used",
+    "pin_code_outlier_flags",
+]:
+    if array_col in val_df.columns:
+        val_df = val_df.withColumn(array_col, F.col(array_col).cast("array<string>"))
+
 val_df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(SILVER_VALIDATED)
 print(f"Written to {SILVER_VALIDATED}: {spark.table(SILVER_VALIDATED).count():,} rows")
