@@ -10,16 +10,10 @@
 import os
 import mlflow
 
-# Must be set explicitly on serverless — auto-detection reads unavailable Spark configs
-mlflow.set_tracking_uri("databricks")
-
-def _resolve_experiment_name() -> str:
-    if os.environ.get("MLFLOW_EXPERIMENT_NAME"):
-        return os.environ["MLFLOW_EXPERIMENT_NAME"]
-    current_user = spark.sql("SELECT current_user()").collect()[0][0]
-    return f"/Users/{current_user}/pramaana"
-
-experiment_name = _resolve_experiment_name()
+# In Databricks notebooks MLflow is pre-configured — do NOT call set_tracking_uri()
+# It internally reads spark.mlflow.modelRegistryUri which is unavailable on serverless.
+current_user = spark.sql("SELECT current_user()").collect()[0][0]
+experiment_name = os.environ.get("MLFLOW_EXPERIMENT_NAME", f"/Users/{current_user}/pramaana")
 mlflow.set_experiment(experiment_name)
 print(f"Experiment: {experiment_name}")
 
