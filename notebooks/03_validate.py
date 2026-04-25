@@ -40,6 +40,10 @@ mlflow.set_experiment(experiment_name)
 
 # COMMAND ----------
 
+os.environ["PRAMAANA_TAVILY_LIMIT"] = "300"
+
+# COMMAND ----------
+
 from src.schemas.facility import ExtractedFacility, ValidationFlags
 from src.agents import validator_internal, validator_tavily, validator_stat
 
@@ -219,6 +223,7 @@ print(f"Validation complete: {len(validated_results):,} OK, {len(errors):,} erro
 # COMMAND ----------
 
 val_df = spark.createDataFrame(pd.json_normalize(validated_results))
+
 for array_col in [
     "internal_contradictions",
     "tavily_corroboration_evidence",
@@ -228,5 +233,16 @@ for array_col in [
     if array_col in val_df.columns:
         val_df = val_df.withColumn(array_col, F.col(array_col).cast("array<string>"))
 
-val_df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(SILVER_VALIDATED)
-print(f"Written to {SILVER_VALIDATED}: {spark.table(SILVER_VALIDATED).count():,} rows")
+val_df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable("pramaana.silver.facilities_validated")
+
+spark.sql("SELECT COUNT(*) FROM pramaana.silver.facilities_validated").show()
+
+# COMMAND ----------
+
+spark.sql("""
+SELECT
+  COUNT(*) AS rows,
+  SUM(CASE WHEN tavily_results_count > 0 THEN 1 ELSE 0 END) AS tavily_checked,
+  AVG(web_presence_score) AS avg_web_presence
+FROM pramaana.silver.facilities_validated
+""").show()

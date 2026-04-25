@@ -15,6 +15,13 @@
 # COMMAND ----------
 
 import os
+os.environ["PRAMAANA_FULL_EXTRACT"] = "1"
+os.environ["PRAMAANA_EXTRACT_WORKERS"] = "1"
+os.environ["DATABRICKS_LLM_ENDPOINT"] = "databricks-meta-llama-3-3-70b-instruct"
+
+# COMMAND ----------
+
+import os
 import json
 import math
 import warnings
@@ -277,6 +284,10 @@ if completed == len(errors):
 
 # COMMAND ----------
 
+spark.sql("SELECT COUNT(*) FROM pramaana.silver.facilities_extracted_ckpt").show()
+
+# COMMAND ----------
+
 # ── Deduplicate checkpoint → write final Silver table ────────────────────────
 silver_df = (
     spark.table(CHECKPOINT_TABLE)
@@ -305,3 +316,10 @@ display(sample_pdf[[
     "capabilities.performs_dialysis",
     "staffing.raw_evidence_span",
 ]])
+
+# COMMAND ----------
+
+spark.sql("""
+CREATE OR REPLACE TABLE pramaana.silver.facilities_extracted AS
+SELECT * FROM pramaana.silver.facilities_extracted_ckpt
+""")

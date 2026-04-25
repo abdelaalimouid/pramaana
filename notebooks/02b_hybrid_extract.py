@@ -207,3 +207,7 @@ display(sample_pdf[[
     "capabilities.performs_dialysis",
     "staffing.raw_evidence_span",
 ]])
+
+# COMMAND ----------
+
+spark.sql("SELECT extraction_model, extraction_confidence, COUNT(*) FROM pramaana.silver.facilities_extracted GROUP BY extraction_model, extraction_confidence").show()
