@@ -10,7 +10,14 @@
 import os
 import mlflow
 
-experiment_name = os.environ.get("MLFLOW_EXPERIMENT_NAME", f"/Users/{spark.conf.get('spark.databricks.clusterUsageTags.userId', 'unknown')}/pramaana")
+def _resolve_experiment_name() -> str:
+    if os.environ.get("MLFLOW_EXPERIMENT_NAME"):
+        return os.environ["MLFLOW_EXPERIMENT_NAME"]
+    # Works on serverless — spark.conf userId is not available there
+    current_user = spark.sql("SELECT current_user()").collect()[0][0]
+    return f"/Users/{current_user}/pramaana"
+
+experiment_name = _resolve_experiment_name()
 mlflow.set_experiment(experiment_name)
 print(f"Experiment: {experiment_name}")
 
