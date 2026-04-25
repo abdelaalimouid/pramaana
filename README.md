@@ -16,7 +16,7 @@ RAW XLSX (10,000 rows)
          |
          v
 [AGENT 1: EXTRACTOR]  Pydantic-structured LLM extraction from free text
-  - Model: Databricks-served Llama 3.1 70B (fallback: GPT-4o-mini)
+  - Model: Databricks-served Llama via Agent Bricks
   - Output: ExtractedFacility (staffing + equipment + capability claims)
          |
          v
@@ -116,7 +116,7 @@ cd pramaana
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# Fill in DATABRICKS_HOST, DATABRICKS_TOKEN, TAVILY_API_KEY, OPENAI_API_KEY, MLFLOW_EXPERIMENT_NAME
+# Fill in DATABRICKS_HOST, DATABRICKS_TOKEN, TAVILY_API_KEY, MLFLOW_EXPERIMENT_NAME
 ```
 
 ### On Databricks

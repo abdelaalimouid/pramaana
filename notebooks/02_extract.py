@@ -9,7 +9,7 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install --upgrade "openai>=1.40" "pydantic>=2.5" "mlflow>=3.1.0" python-dotenv
+# MAGIC %pip install --upgrade "pydantic>=2.5" "mlflow>=3.1.0" "httpx>=0.27" python-dotenv
 # MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------

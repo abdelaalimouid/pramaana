@@ -6,7 +6,7 @@ import os
 import json
 import warnings
 import mlflow
-from openai import OpenAI
+import httpx
 from src.schemas.facility import RawFacilityRow, ExtractedFacility, StaffingClaim, EquipmentClaim, CapabilityClaim
 from src.tracing import trace_agent_run
 
@@ -74,39 +74,40 @@ _EMPTY_EQUIPMENT = EquipmentClaim()
 _EMPTY_CAPABILITIES = CapabilityClaim()
 
 
-def _openai_fallback(reason: str) -> tuple[OpenAI, str, bool, str]:
-    """Create explicit OpenAI fallback client; serves IDP Innovation reliability."""
-    message = (
-        f"WARNING: Databricks-served LLM unavailable ({reason}). "
-        "Falling back to OpenAI GPT-4o-mini explicitly."
-    )
-    print(message)
-    warnings.warn(message, stacklevel=3)
-    fallback_model = os.environ.get("OPENAI_FALLBACK_MODEL", "gpt-4o-mini")
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY not set; cannot use explicit fallback model.")
-    return OpenAI(api_key=api_key), fallback_model, True, "openai"
-
-
-def _get_llm_client() -> tuple[OpenAI, str, bool, str]:
-    """Return (client, model_name, supports_json_mode, provider).
-
-    Databricks-served Llama is primary; OpenAI GPT-4o-mini is the fallback.
-    Llama endpoints on Databricks do not support response_format=json_object.
-    """
+def _get_databricks_endpoint() -> tuple[str, str, str]:
+    """Load Databricks serving endpoint settings for IDP Innovation extraction."""
     databricks_host = os.environ.get("DATABRICKS_HOST")
     databricks_token = os.environ.get("DATABRICKS_TOKEN")
     endpoint = os.environ.get("DATABRICKS_LLM_ENDPOINT", "databricks-meta-llama-3-1-70b-instruct")
 
-    if databricks_host and databricks_token:
-        client = OpenAI(
-            base_url=f"{databricks_host}/serving-endpoints",
-            api_key=databricks_token,
-        )
-        return client, endpoint, False, "databricks"  # Llama does not support json_object mode
+    if not databricks_host or not databricks_token:
+        databricks_host, databricks_token = _get_notebook_auth()
 
-    return _openai_fallback("DATABRICKS_HOST or DATABRICKS_TOKEN is not set")
+    if not databricks_host or not databricks_token:
+        raise RuntimeError(
+            "DATABRICKS_HOST and DATABRICKS_TOKEN must be set. "
+            "No fallback LLM is configured."
+        )
+
+    return databricks_host.rstrip("/"), databricks_token, endpoint
+
+
+def _get_notebook_auth() -> tuple[str | None, str | None]:
+    """Read Databricks notebook host/token without printing secrets."""
+    try:
+        from IPython import get_ipython
+
+        shell = get_ipython()
+        dbutils = shell.user_ns.get("dbutils") if shell else None
+        if not dbutils:
+            return None, None
+
+        context = dbutils.notebook.entry_point.getDbutils().notebook().getContext()
+        host = f"https://{context.browserHostName().get()}"
+        token = context.apiToken().get()
+        return host, token
+    except Exception:
+        return None, None
 
 
 def _parse_llm_output(raw: str, facility_id: str) -> dict:
@@ -147,29 +148,50 @@ def _safe_model(model_cls, data: dict):
         return model_cls()
 
 
-def _call_llm(
-    client: OpenAI,
-    model: str,
-    supports_json_mode: bool,
-    provider: str,
-    prompt: str,
-    facility_id: str,
-) -> str:
-    """Call one chat model under an MLflow LLM span for trace transparency."""
-    call_kwargs = dict(
-        model=model,
+def _extract_message_content(response_json: dict) -> str:
+    """Extract model text from Databricks serving response shapes."""
+    choices = response_json.get("choices") or []
+    if choices:
+        message = choices[0].get("message") or {}
+        if message.get("content") is not None:
+            return message["content"]
+        if choices[0].get("text") is not None:
+            return choices[0]["text"]
+
+    predictions = response_json.get("predictions") or []
+    if predictions:
+        first = predictions[0]
+        if isinstance(first, str):
+            return first
+        if isinstance(first, dict):
+            return first.get("content") or first.get("text") or json.dumps(first)
+
+    if response_json.get("content") is not None:
+        return response_json["content"]
+
+    raise RuntimeError(f"Unrecognized Databricks LLM response shape: {response_json}")
+
+
+def _call_databricks_llm(host: str, token: str, endpoint: str, prompt: str, facility_id: str) -> str:
+    """Call Databricks-served Llama under an MLflow LLM span for transparency."""
+    payload = dict(
         messages=[{"role": "user", "content": prompt}],
         temperature=0.0,
         max_tokens=800,
     )
-    if supports_json_mode:
-        call_kwargs["response_format"] = {"type": "json_object"}
+    url = f"{host}/serving-endpoints/{endpoint}/invocations"
 
-    with mlflow.start_span(name=f"llm_extraction_call::{provider}", span_type="LLM") as span:
-        span.set_inputs({"model": model, "provider": provider, "facility_id": facility_id})
+    with mlflow.start_span(name="llm_extraction_call::databricks", span_type="LLM") as span:
+        span.set_inputs({"model": endpoint, "provider": "databricks", "facility_id": facility_id})
         try:
-            response = client.chat.completions.create(**call_kwargs)
-            raw_json = response.choices[0].message.content or ""
+            response = httpx.post(
+                url,
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                json=payload,
+                timeout=60.0,
+            )
+            response.raise_for_status()
+            raw_json = _extract_message_content(response.json())
             span.set_outputs({"raw_json_length": len(raw_json)})
             return raw_json
         except Exception as exc:
@@ -180,7 +202,7 @@ def _call_llm(
 @trace_agent_run("extractor")
 def extract(row: RawFacilityRow, facility_id: str) -> ExtractedFacility:
     """Call LLM to extract structured capability claims from raw facility text fields."""
-    client, model, supports_json_mode, provider = _get_llm_client()
+    host, token, endpoint = _get_databricks_endpoint()
 
     prompt = _EXTRACTION_PROMPT.format(
         name=row.name,
@@ -193,15 +215,7 @@ def extract(row: RawFacilityRow, facility_id: str) -> ExtractedFacility:
         capability=row.capability or "",
     )
 
-    try:
-        raw_json = _call_llm(client, model, supports_json_mode, provider, prompt, facility_id)
-        extraction_model = model
-    except Exception as exc:
-        if provider != "databricks":
-            raise
-        client, model, supports_json_mode, provider = _openai_fallback(str(exc))
-        raw_json = _call_llm(client, model, supports_json_mode, provider, prompt, facility_id)
-        extraction_model = model
+    raw_json = _call_databricks_llm(host, token, endpoint, prompt, facility_id)
 
     parsed = _parse_llm_output(raw_json or "", facility_id)
 
@@ -217,6 +231,6 @@ def extract(row: RawFacilityRow, facility_id: str) -> ExtractedFacility:
         staffing=_safe_model(StaffingClaim, parsed.get("staffing") or {}),
         equipment=_safe_model(EquipmentClaim, parsed.get("equipment") or {}),
         capabilities=_safe_model(CapabilityClaim, parsed.get("capabilities") or {}),
-        extraction_model=extraction_model,
+        extraction_model=endpoint,
         extraction_confidence=parsed.get("extraction_confidence", "medium"),
     )
