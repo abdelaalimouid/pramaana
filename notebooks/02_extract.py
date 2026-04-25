@@ -211,9 +211,14 @@ assert count >= total * 0.95, f"Too many failures: only {count} of {total} rows 
 # COMMAND ----------
 
 # ── Quick sanity checks ───────────────────────────────────────────────────────
-display(spark.table(SILVER_TABLE).select(
-    "facility_id", "name", "state", "extraction_confidence",
-    F.col("`equipment.has_icu`").alias("has_icu"),
-    F.col("`capabilities.performs_dialysis`").alias("performs_dialysis"),
-    F.col("`staffing.raw_evidence_span`").alias("staffing_evidence"),
-).limit(10))
+# Spark Connect/Photon can mis-handle flattened dotted column names; pandas is safer here.
+sample_pdf = spark.table(SILVER_TABLE).limit(10).toPandas()
+display(sample_pdf[[
+    "facility_id",
+    "name",
+    "state",
+    "extraction_confidence",
+    "equipment.has_icu",
+    "capabilities.performs_dialysis",
+    "staffing.raw_evidence_span",
+]])
