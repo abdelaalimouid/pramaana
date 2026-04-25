@@ -28,6 +28,24 @@ from src.agents import validator_internal, validator_tavily, validator_stat
 extracted_pdf = spark.table(SILVER_EXTRACTED).toPandas()
 print(f"Loaded {len(extracted_pdf):,} extracted facilities")
 
+# ── Also load the Bronze row for web-signal columns ───────────────────────────
+bronze_pdf = spark.table("pramaana.bronze.facilities_raw").select(
+    "facility_id", "officialWebsite", "distinct_social_media_presence_count",
+    "engagement_metrics_n_followers",
+).toPandas()
+web_signals = bronze_pdf.set_index("facility_id").to_dict(orient="index")
+print(f"Web signals loaded for {len(web_signals):,} facilities")
+
+# COMMAND ----------
+
+import math
+
+def _web(facility_id: str, key: str, default):
+    val = web_signals.get(facility_id, {}).get(key, default)
+    if val is None or (isinstance(val, float) and math.isnan(val)):
+        return default
+    return val
+
 # COMMAND ----------
 
 # Pre-compute PIN-code stats for Agent 2C (done once over the full set)
@@ -47,7 +65,12 @@ with mlflow.start_run(run_name="phase3_validation"):
             contradictions = validator_internal.validate(facility)
 
             # 2B: Tavily live web corroboration (THE KILLSHOT)
-            flags: ValidationFlags = validator_tavily.validate(facility)
+            flags: ValidationFlags = validator_tavily.validate(
+                facility,
+                has_official_website=bool(_web(facility.facility_id, "officialWebsite", None)),
+                social_presence_count=int(_web(facility.facility_id, "distinct_social_media_presence_count", 0) or 0),
+                follower_count=int(_web(facility.facility_id, "engagement_metrics_n_followers", 0) or 0),
+            )
 
             # 2C: statistical outlier check
             outlier_flags = validator_stat.validate(facility, pin_stats)

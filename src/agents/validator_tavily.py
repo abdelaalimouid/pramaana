@@ -36,8 +36,18 @@ def _search_once(client: TavilyClient, query: str) -> list[dict]:
     return response.get("results", [])
 
 
-def validate(facility: ExtractedFacility) -> ValidationFlags:
-    """Hit Tavily for each high-stakes claim; build web presence evidence."""
+def validate(
+    facility: ExtractedFacility,
+    has_official_website: bool = False,
+    social_presence_count: int = 0,
+    follower_count: int = 0,
+) -> ValidationFlags:
+    """Hit Tavily for each high-stakes claim; build web presence evidence.
+
+    has_official_website / social_presence_count / follower_count come from
+    the Bronze row (officialWebsite, distinct_social_media_presence_count,
+    engagement_metrics_n_followers) and must be passed by the notebook caller.
+    """
     api_key = os.environ.get("TAVILY_API_KEY")
     if not api_key:
         raise EnvironmentError("TAVILY_API_KEY not set")
@@ -55,9 +65,11 @@ def validate(facility: ExtractedFacility) -> ValidationFlags:
         if r.get("score", 0) > 0.5
     ]
 
-    # Web presence score: log-scale on result count, capped at 1.0
     raw_count = len(all_results)
-    web_presence_score = min(1.0, raw_count / (_MAX_RESULTS * len(queries)))
+    # Blend Tavily results (60%) with dataset-native web signals (40%)
+    tavily_score = min(1.0, raw_count / (_MAX_RESULTS * len(queries)))
+    dataset_score = min(1.0, (int(has_official_website) * 0.5 + min(social_presence_count, 5) * 0.1))
+    web_presence_score = round(0.6 * tavily_score + 0.4 * dataset_score, 4)
 
     return ValidationFlags(
         facility_id=facility.facility_id,
@@ -65,9 +77,9 @@ def validate(facility: ExtractedFacility) -> ValidationFlags:
         tavily_results_count=raw_count,
         tavily_corroboration_evidence=corroboration_evidence,
         tavily_queries_used=queries,
-        has_official_website=bool(facility.staffing.raw_evidence_span),  # placeholder until wired to raw row
-        social_presence_count=0,
-        follower_count=0,
+        has_official_website=has_official_website,
+        social_presence_count=social_presence_count,
+        follower_count=follower_count,
         pin_code_outlier_flags=[],
         internal_contradictions=[],
     )
