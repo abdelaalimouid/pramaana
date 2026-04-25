@@ -1,4 +1,5 @@
 databricks-sdk>=0.30.0
+databricks-vectorsearch>=0.40
 mlflow>=3.0.0
 pydantic>=2.5
 openai>=1.40

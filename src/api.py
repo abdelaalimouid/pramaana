@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from src.schemas.facility import RawFacilityRow, TrustScore
 from src.tracing import _init_experiment
 
@@ -19,7 +19,7 @@ app = FastAPI(title="PRAMAANA", version="0.1.0")
 class ScoreRequest(BaseModel):
     facility_id: str
     row: RawFacilityRow
-    pin_stats: dict = {}
+    pin_stats: dict = Field(default_factory=dict)
 
 
 @app.get("/health")
