@@ -62,6 +62,19 @@ def _clean(value):
     return value
 
 
+def _list(value) -> list[str]:
+    """Normalize Spark/Pandas array values before Pydantic validation."""
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return []
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if isinstance(value, (list, tuple, set)):
+        return [str(item) for item in value if item is not None]
+    if value == "":
+        return []
+    return [str(value)]
+
+
 def _nested_facility(row: dict) -> ExtractedFacility:
     """Rebuild nested ExtractedFacility from flattened extracted columns."""
     payload = {
@@ -115,15 +128,15 @@ def _validation_flags(row: dict) -> ValidationFlags:
     """Rebuild ValidationFlags from validated columns."""
     return ValidationFlags(
         facility_id=_clean(row.get("facility_id")),
-        internal_contradictions=row.get("internal_contradictions") or [],
+        internal_contradictions=_list(row.get("internal_contradictions")),
         web_presence_score=float(_clean(row.get("web_presence_score")) or 0.0),
         tavily_results_count=int(_clean(row.get("tavily_results_count")) or 0),
-        tavily_corroboration_evidence=row.get("tavily_corroboration_evidence") or [],
-        tavily_queries_used=row.get("tavily_queries_used") or [],
+        tavily_corroboration_evidence=_list(row.get("tavily_corroboration_evidence")),
+        tavily_queries_used=_list(row.get("tavily_queries_used")),
         has_official_website=bool(_clean(row.get("has_official_website"))),
         social_presence_count=int(_clean(row.get("social_presence_count")) or 0),
         follower_count=int(_clean(row.get("follower_count")) or 0),
-        pin_code_outlier_flags=row.get("pin_code_outlier_flags") or [],
+        pin_code_outlier_flags=_list(row.get("pin_code_outlier_flags")),
     )
 
 
@@ -160,6 +173,8 @@ with mlflow.start_span(name="phase4_scoring", span_type="CHAIN") as span:
     })
 
 print(f"Scoring complete: {len(scored_results):,} OK, {len(errors):,} errors, avg score={avg_score:.1f}")
+if errors:
+    raise RuntimeError(f"Scoring produced {len(errors)} errors; refusing to write partial Gold table.")
 
 # COMMAND ----------
 
