@@ -78,7 +78,7 @@ def _get_databricks_endpoint() -> tuple[str, str, str]:
     """Load Databricks serving endpoint settings for IDP Innovation extraction."""
     databricks_host = os.environ.get("DATABRICKS_HOST")
     databricks_token = os.environ.get("DATABRICKS_TOKEN")
-    endpoint = os.environ.get("DATABRICKS_LLM_ENDPOINT", "databricks-meta-llama-3-1-70b-instruct")
+    endpoint = os.environ.get("DATABRICKS_LLM_ENDPOINT", "databricks-meta-llama-3-3-70b-instruct")
 
     if not databricks_host or not databricks_token:
         databricks_host, databricks_token = _get_notebook_auth()
@@ -194,9 +194,33 @@ def _call_databricks_llm(host: str, token: str, endpoint: str, prompt: str, faci
             raw_json = _extract_message_content(response.json())
             span.set_outputs({"raw_json_length": len(raw_json)})
             return raw_json
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                available = _list_serving_endpoints(host, token)
+                raise RuntimeError(
+                    f"Databricks serving endpoint '{endpoint}' was not found. "
+                    f"Available endpoints: {available or 'none visible to this token'}. "
+                    "Set DATABRICKS_LLM_ENDPOINT to one of the available endpoint names."
+                ) from exc
+            record_span_error(span, exc)
+            raise
         except Exception as exc:
             record_span_error(span, exc)
             raise
+
+
+def _list_serving_endpoints(host: str, token: str) -> list[str]:
+    """List Databricks serving endpoints to diagnose model endpoint setup."""
+    try:
+        response = httpx.get(
+            f"{host}/api/2.0/serving-endpoints",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=20.0,
+        )
+        response.raise_for_status()
+        return [item.get("name", "") for item in response.json().get("endpoints", []) if item.get("name")]
+    except Exception:
+        return []
 
 
 @trace_agent_run("extractor")
