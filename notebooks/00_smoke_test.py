@@ -10,10 +10,12 @@
 import os
 import mlflow
 
+# Must be set explicitly on serverless — auto-detection reads unavailable Spark configs
+mlflow.set_tracking_uri("databricks")
+
 def _resolve_experiment_name() -> str:
     if os.environ.get("MLFLOW_EXPERIMENT_NAME"):
         return os.environ["MLFLOW_EXPERIMENT_NAME"]
-    # Works on serverless — spark.conf userId is not available there
     current_user = spark.sql("SELECT current_user()").collect()[0][0]
     return f"/Users/{current_user}/pramaana"
 

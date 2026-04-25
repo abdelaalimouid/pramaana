@@ -10,7 +10,12 @@ from typing import Callable, Any
 
 
 def _init_experiment() -> None:
-    """Set MLflow experiment from env; must be called after dotenv is loaded."""
+    """Set MLflow tracking URI and experiment; call after dotenv is loaded.
+
+    Explicit tracking URI required on Databricks serverless — auto-detection
+    reads Spark configs unavailable in that environment.
+    """
+    mlflow.set_tracking_uri("databricks")
     experiment_name = os.environ.get("MLFLOW_EXPERIMENT_NAME", "/pramaana")
     mlflow.set_experiment(experiment_name)
 
