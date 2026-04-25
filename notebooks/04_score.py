@@ -190,3 +190,13 @@ print(f"Written to {GOLD_TABLE}: {spark.table(GOLD_TABLE).count():,} rows")
 
 # Quick distribution summary for the README/demo
 display(spark.table(GOLD_TABLE).groupBy("score_band").count().orderBy("score_band"))
+
+# COMMAND ----------
+
+spark.sql("SELECT COUNT(*) FROM pramaana.gold.facilities_scored").show()
+spark.sql("""
+SELECT score_band, COUNT(*) AS n
+FROM pramaana.gold.facilities_scored
+GROUP BY score_band
+ORDER BY score_band
+""").show()
