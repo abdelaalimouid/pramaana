@@ -7,6 +7,11 @@
 
 # COMMAND ----------
 
+# MAGIC %pip install --upgrade databricks-vectorsearch databricks-sdk
+# MAGIC dbutils.library.restartPython()
+
+# COMMAND ----------
+
 import os
 from databricks.sdk import WorkspaceClient
 from databricks.vector_search.client import VectorSearchClient
@@ -15,6 +20,16 @@ GOLD_TABLE = "pramaana.gold.facilities_scored"
 VECTOR_INDEX_NAME = "pramaana.gold.facilities_scored_vs_index"
 ENDPOINT_NAME = "pramaana_vs_endpoint"
 EMBEDDING_MODEL = "databricks-bge-large-en"  # built-in Databricks embedding model
+
+# COMMAND ----------
+
+gold_count = spark.table(GOLD_TABLE).count()
+print(f"Gold rows available for vector indexing: {gold_count:,}")
+assert gold_count == 10_000, f"Expected 10,000 Gold rows, got {gold_count}"
+
+display(spark.table(GOLD_TABLE).select(
+    "facility_id", "name", "state", "score", "score_band", "human_summary"
+).limit(5))
 
 # COMMAND ----------
 
@@ -67,11 +82,23 @@ print("Index sync triggered. Check endpoint status in the Databricks UI.")
 # COMMAND ----------
 
 # Smoke test: query the index
-results = index.similarity_search(
-    query_text="dialysis facility Bihar",
-    columns=["facility_id", "name", "state", "score", "score_band", "human_summary"],
-    num_results=5,
-)
-print("Sample query results:")
-for r in results.get("result", {}).get("data_array", []):
-    print(r)
+try:
+    results = index.similarity_search(
+        query_text="dialysis facility Bihar",
+        columns=["facility_id", "name", "state", "score", "score_band", "human_summary"],
+        num_results=5,
+    )
+    print("Sample vector query results:")
+    for r in results.get("result", {}).get("data_array", []):
+        print(r)
+except Exception as exc:
+    print(f"Vector index not queryable yet: {exc}")
+    print("Fallback SQL demo query:")
+    display(spark.sql(f"""
+        SELECT facility_id, name, state, score, score_band, human_summary
+        FROM {GOLD_TABLE}
+        WHERE lower(human_summary) LIKE '%dialysis%'
+          AND score >= 45
+        ORDER BY score DESC
+        LIMIT 5
+    """))
