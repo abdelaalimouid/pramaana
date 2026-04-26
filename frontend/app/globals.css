@@ -426,41 +426,108 @@ button {
   background-size: auto, 28px 28px, 28px 28px, auto;
 }
 
-.india-outline {
+.india-map-svg {
   position: absolute;
-  inset: 54px 84px 58px 78px;
-  border: 2px solid rgba(15, 107, 85, 0.22);
-  border-radius: 44% 56% 47% 53%;
-  transform: rotate(-8deg);
+  inset: 10px 8px 8px;
+  width: calc(100% - 16px);
+  height: calc(100% - 18px);
 }
 
-.map-marker {
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  border: 3px solid #fff;
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  box-shadow: 0 0 0 7px rgba(15, 107, 85, 0.1);
+.india-grid-line {
+  stroke: rgba(24, 36, 32, 0.06);
+  stroke-width: 1;
 }
 
-.map-marker.is-selected {
-  width: 22px;
-  height: 22px;
-  box-shadow: 0 0 0 10px rgba(15, 107, 85, 0.16);
+.india-shape {
+  fill: rgba(255, 253, 248, 0.72);
+  stroke: rgba(15, 107, 85, 0.34);
+  stroke-width: 2;
+  filter: drop-shadow(0 18px 26px rgba(24, 36, 32, 0.08));
+}
+
+.india-shape-ne {
+  fill: rgba(226, 242, 236, 0.55);
+}
+
+.focus-ring {
+  fill: none;
+  stroke: rgba(185, 121, 18, 0.5);
+  stroke-dasharray: 4 5;
+  stroke-width: 2;
+}
+
+.map-label {
+  fill: var(--amber);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-anchor: middle;
+  text-transform: uppercase;
+}
+
+.marker-group {
+  cursor: pointer;
+}
+
+.marker-halo {
+  opacity: 0.18;
+}
+
+.marker-core {
+  stroke: #fff;
+  stroke-width: 3;
+}
+
+.marker-hit {
+  fill: transparent;
+  pointer-events: all;
+}
+
+.map-callout {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  max-width: 260px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 253, 248, 0.92);
+  box-shadow: 0 12px 30px rgba(24, 36, 32, 0.1);
+}
+
+.map-callout span {
+  color: var(--green);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.map-callout strong {
+  display: block;
+  margin: 5px 0;
+}
+
+.map-callout p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
 }
 
 .is-high {
   background: var(--green);
+  fill: var(--green);
 }
 
 .is-medium {
   background: var(--amber);
+  fill: var(--amber);
 }
 
 .is-low,
 .is-suspicious {
   background: var(--red);
+  fill: var(--red);
 }
 
 .map-legend-clean {

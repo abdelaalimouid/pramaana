@@ -149,14 +149,24 @@ const PROMPTS = [
 ];
 
 const statePosition: Record<string, [number, number]> = {
-  Rajasthan: [28, 34],
-  "Uttar Pradesh": [58, 34],
-  Bihar: [74, 38],
-  Jharkhand: [72, 52],
-  Maharashtra: [43, 64],
-  Telangana: [59, 68],
-  "Tamil Nadu": [66, 86],
+  Rajasthan: [126, 138],
+  "Uttar Pradesh": [218, 138],
+  Bihar: [274, 156],
+  Jharkhand: [264, 196],
+  Maharashtra: [166, 266],
+  Telangana: [220, 296],
+  Karnataka: [190, 346],
+  Gujarat: [92, 190],
+  Haryana: [165, 102],
+  "Madhya Pradesh": [180, 210],
+  Delhi: [178, 118],
+  "West Bengal": [302, 190],
+  "Tamil Nadu": [238, 392],
 };
+
+const INDIA_PATH =
+  "M163 18c23-8 63 4 79 18 14 12 32 12 51 25 13 9 22 23 35 33-8 16-7 27 4 43 13 19 24 53 12 83-13 33-30 67-51 94-22 29-43 48-60 71-13 18-16 42-27 60-18-16-29-43-43-71-19-39-42-75-60-113-15-31-31-61-43-91-12-28-35-54-31-84 3-30 34-51 65-60 14-4 27-8 42-13Z";
+const INDIA_NE_PATH = "M286 50c20 6 45 14 61 30-9 10-23 13-36 9-17-5-28-18-38-31l13-8Z";
 
 const bandClass: Record<Band, string> = {
   high: "is-high",
@@ -337,19 +347,63 @@ export default function Dashboard() {
           </div>
 
           <div className="map-canvas">
-            <div className="india-outline" />
-            {results.map((facility, index) => {
-              const position = statePosition[facility.state] ?? [50 + index * 4, 50 + index * 3];
-              return (
-                <button
-                  key={facility.id}
-                  className={`map-marker ${bandClass[facility.band]} ${selected?.id === facility.id ? "is-selected" : ""}`}
-                  style={{ left: `${position[0]}%`, top: `${position[1]}%` }}
-                  onClick={() => setSelectedId(facility.id)}
-                  aria-label={facility.name}
-                />
-              );
-            })}
+            <svg className="india-map-svg" viewBox="0 0 380 460" aria-label="India capability map">
+              <defs>
+                <radialGradient id="indiaGlow" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stopColor="#0f6b55" stopOpacity="0.14" />
+                  <stop offset="100%" stopColor="#0f6b55" stopOpacity="0" />
+                </radialGradient>
+              </defs>
+              <ellipse cx="190" cy="235" rx="172" ry="205" fill="url(#indiaGlow)" />
+              {[90, 150, 210, 270, 330, 390].map((y) => (
+                <line key={`h-${y}`} x1="44" y1={y} x2="350" y2={y} className="india-grid-line" />
+              ))}
+              {[80, 130, 180, 230, 280, 330].map((x) => (
+                <line key={`v-${x}`} x1={x} y1="30" x2={x} y2="430" className="india-grid-line" />
+              ))}
+              <path d={INDIA_PATH} className="india-shape" />
+              <path d={INDIA_NE_PATH} className="india-shape india-shape-ne" />
+              <circle cx="274" cy="156" r="31" className="focus-ring" />
+              <text x="274" y="113" className="map-label">
+                Bihar focus
+              </text>
+
+              {results.map((facility, index) => {
+                const [x, y] = statePosition[facility.state] ?? [145 + index * 16, 180 + index * 18];
+                const selectedMarker = selected?.id === facility.id;
+                return (
+                  <g key={facility.id} className="marker-group">
+                    <circle
+                      cx={x}
+                      cy={y}
+                      r={selectedMarker ? 15 : 11}
+                      className={`marker-halo ${bandClass[facility.band]}`}
+                    />
+                    <circle
+                      cx={x}
+                      cy={y}
+                      r={selectedMarker ? 7 : 5}
+                      className={`marker-core ${bandClass[facility.band]}`}
+                    />
+                    <circle
+                      cx={x}
+                      cy={y}
+                      r="18"
+                      className="marker-hit"
+                      onClick={() => setSelectedId(facility.id)}
+                    />
+                  </g>
+                );
+              })}
+            </svg>
+
+            {selected && (
+              <div className="map-callout">
+                <span>{selected.state}</span>
+                <strong>{selected.name}</strong>
+                <p>{selected.score}/100 trust score</p>
+              </div>
+            )}
           </div>
 
           <div className="map-legend-clean">
