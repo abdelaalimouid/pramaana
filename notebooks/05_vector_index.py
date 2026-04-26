@@ -13,7 +13,9 @@
 # COMMAND ----------
 
 import os
+import time
 from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.vectorsearch import EndpointType
 from databricks.vector_search.client import VectorSearchClient
 
 GOLD_TABLE = "pramaana.gold.facilities_scored"
@@ -47,11 +49,27 @@ w = WorkspaceClient()
 try:
     endpoint = w.vector_search_endpoints.create_endpoint(
         name=ENDPOINT_NAME,
-        endpoint_type="STANDARD",
+        endpoint_type=EndpointType.STANDARD,
     )
     print(f"Created VS endpoint: {ENDPOINT_NAME}")
 except Exception as e:
     print(f"Endpoint already exists or error: {e}")
+
+# COMMAND ----------
+
+for attempt in range(12):
+    try:
+        endpoint = w.vector_search_endpoints.get_endpoint(ENDPOINT_NAME)
+        print(f"Vector Search endpoint found: {ENDPOINT_NAME}")
+        break
+    except Exception as exc:
+        print(f"Waiting for Vector Search endpoint ({attempt + 1}/12): {exc}")
+        time.sleep(10)
+else:
+    raise RuntimeError(
+        f"Vector Search endpoint {ENDPOINT_NAME} was not found. "
+        "Create it manually in Databricks Vector Search UI, then rerun from this cell."
+    )
 
 # COMMAND ----------
 
