@@ -9,11 +9,44 @@ type DatabricksStatementResponse = {
 const GOLD_TABLE = "pramaana.gold.facilities_scored";
 const VECTOR_INDEX =
   process.env.DATABRICKS_VECTOR_INDEX || "pramaana.gold.facilities_scored_vs_index";
+const INDIAN_STATES = [
+  "Andhra Pradesh",
+  "Arunachal Pradesh",
+  "Assam",
+  "Bihar",
+  "Chandigarh",
+  "Chhattisgarh",
+  "Delhi",
+  "Goa",
+  "Gujarat",
+  "Haryana",
+  "Himachal Pradesh",
+  "Jharkhand",
+  "Karnataka",
+  "Kerala",
+  "Madhya Pradesh",
+  "Maharashtra",
+  "Manipur",
+  "Meghalaya",
+  "Mizoram",
+  "Nagaland",
+  "Odisha",
+  "Punjab",
+  "Rajasthan",
+  "Sikkim",
+  "Tamil Nadu",
+  "Telangana",
+  "Tripura",
+  "Uttar Pradesh",
+  "Uttarakhand",
+  "West Bengal",
+];
 
 type SearchIntent = {
   semanticQuery: string;
   terms: string[];
   band?: "high" | "medium" | "low" | "suspicious";
+  state?: string;
   riskIntent: boolean;
   contradictionIntent: boolean;
   webProofIntent: boolean;
@@ -36,9 +69,15 @@ function parseCount(summary: string, label: string) {
   return match ? Number(match[1]) : 0;
 }
 
+function parseTrustScore(summary: string) {
+  const match = summary.match(/scores\s+(\d+)\/100/i);
+  return match ? Number(match[1]) : 0;
+}
+
 function deriveIntent(rawQuery: string): SearchIntent {
-  const q = rawQuery.toLowerCase();
+  const q = rawQuery.toLowerCase().replace(/[-_]/g, " ");
   const terms = new Set<string>();
+  const state = INDIAN_STATES.find((item) => q.includes(item.toLowerCase()));
 
   if (q.includes("dialysis") || q.includes("renal")) {
     terms.add("dialysis");
@@ -113,6 +152,7 @@ function deriveIntent(rawQuery: string): SearchIntent {
     semanticQuery: Array.from(terms).join(" ") || rawQuery,
     terms: Array.from(terms),
     band,
+    state,
     riskIntent,
     contradictionIntent,
     webProofIntent,
@@ -134,6 +174,24 @@ function rowToFacility(row: unknown[], query: string) {
     summary,
     ciLow: Number(row[6] ?? 0) || undefined,
     ciHigh: Number(row[7] ?? 0) || undefined,
+  };
+}
+
+function vectorRowToFacility(row: unknown[], query: string) {
+  const summary = String(row[4] ?? "");
+  return {
+    id: String(row[0] ?? ""),
+    name: String(row[1] ?? ""),
+    state: String(row[2] ?? ""),
+    score: parseTrustScore(summary),
+    band: String(row[3] ?? "medium").toLowerCase(),
+    capability: query,
+    webHits: parseCount(summary, "Web hits"),
+    contradictions: parseCount(summary, "Contradictions"),
+    outliers: parseCount(summary, "Outlier flags"),
+    summary,
+    ciLow: Number(row[5] ?? 0) || undefined,
+    ciHigh: Number(row[6] ?? 0) || undefined,
   };
 }
 
@@ -159,7 +217,6 @@ async function queryVectorSearch(
           "facility_id",
           "name",
           "state",
-          "score",
           "score_band",
           "human_summary",
           "confidence_interval_low",
@@ -177,7 +234,7 @@ async function queryVectorSearch(
 
   const payload = (await response.json()) as DatabricksStatementResponse;
   return (payload.result?.data_array ?? [])
-    .map((row) => rowToFacility(row, query))
+    .map((row) => vectorRowToFacility(row, query))
     .filter((facility) => {
       const stateMatches = state === "all" || facility.state === state;
       const scoreMatches = facility.score >= minScore;
@@ -224,7 +281,9 @@ async function queryGoldSql(
   const riskClause = intent.riskIntent
     ? "AND (score_band IN ('low', 'suspicious') OR size(reason_codes) > 0 OR human_summary NOT LIKE '%Web hits: 10%')"
     : "";
-  const contradictionClause = intent.contradictionIntent ? "AND size(reason_codes) > 0" : "";
+  const contradictionClause = intent.contradictionIntent
+    ? "AND human_summary NOT LIKE '%Contradictions: 0%'"
+    : "";
   const webProofClause = intent.webProofIntent ? "AND human_summary LIKE '%Web hits: 10%'" : "";
   const statement = `
     SELECT
@@ -289,9 +348,11 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const query = sqlString(searchParams.get("q") || "dialysis");
-  const state = sqlString(searchParams.get("state") || "all");
   const minScore = clampScore(searchParams.get("minScore"));
   const intent = deriveIntent(query);
+  const requestedState = sqlString(searchParams.get("state") || "all");
+  const state =
+    requestedState === "all" && intent.state ? sqlString(intent.state) : requestedState;
 
   try {
     const facilities = await queryVectorSearch(host, token, query, state, minScore, intent);
