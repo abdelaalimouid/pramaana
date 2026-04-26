@@ -18,6 +18,10 @@ type Facility = {
   summary: string;
   ciLow?: number;
   ciHigh?: number;
+  reasonCodes?: string[];
+  citationSpans?: string[];
+  matchedEvidence?: string;
+  matchedTerms?: string[];
 };
 
 type ResultStatus = "ready" | "loading" | "live" | "fallback" | "error";
@@ -35,6 +39,10 @@ const DEMO_FACILITIES: Facility[] = [
     outliers: 0,
     ciLow: 58,
     ciHigh: 90,
+    reasonCodes: [],
+    citationSpans: ["[capabilities] dialysis centre with corroborated web presence"],
+    matchedEvidence: "[capabilities] dialysis centre with corroborated web presence",
+    matchedTerms: ["dialysis"],
     summary:
       "Dr. Mudit Khurana Dialysis Centre scores 80/100 [HIGH]. Web hits: 10. Contradictions: 0. Outlier flags: 0.",
   },
@@ -50,6 +58,10 @@ const DEMO_FACILITIES: Facility[] = [
     outliers: 0,
     ciLow: 62,
     ciHigh: 91,
+    reasonCodes: [],
+    citationSpans: ["[capabilities] dialysis clinic with corroborated web presence"],
+    matchedEvidence: "[capabilities] dialysis clinic with corroborated web presence",
+    matchedTerms: ["dialysis"],
     summary:
       "Apollo Dialysis Clinic, S.S Hospitals scores 80/100 [HIGH]. Web hits: 10. Contradictions: 0. Outlier flags: 0.",
   },
@@ -65,6 +77,10 @@ const DEMO_FACILITIES: Facility[] = [
     outliers: 0,
     ciLow: 55,
     ciHigh: 88,
+    reasonCodes: [],
+    citationSpans: ["[capabilities] diagnostic and dialysis center"],
+    matchedEvidence: "[capabilities] diagnostic and dialysis center",
+    matchedTerms: ["dialysis"],
     summary:
       "I Care Diagnostic and Dialysis Center scores 78/100 [HIGH]. Web hits: 10. Contradictions: 0. Outlier flags: 0.",
   },
@@ -80,6 +96,10 @@ const DEMO_FACILITIES: Facility[] = [
     outliers: 0,
     ciLow: 48,
     ciHigh: 84,
+    reasonCodes: [],
+    citationSpans: ["[capabilities] dialysis centre"],
+    matchedEvidence: "[capabilities] dialysis centre",
+    matchedTerms: ["dialysis"],
     summary:
       "GR Dialysis Centre scores 73/100 [HIGH]. Web hits: 10. Contradictions: 0. Outlier flags: 0.",
   },
@@ -95,6 +115,10 @@ const DEMO_FACILITIES: Facility[] = [
     outliers: 0,
     ciLow: 50,
     ciHigh: 84,
+    reasonCodes: [],
+    citationSpans: ["[capabilities] dialysis center"],
+    matchedEvidence: "[capabilities] dialysis center",
+    matchedTerms: ["dialysis"],
     summary:
       "Hfrc Dialysis Center scores 73/100 [HIGH]. Web hits: 10. Contradictions: 0. Outlier flags: 0.",
   },
@@ -343,6 +367,7 @@ export default function Dashboard() {
                 <span className="result-main">
                   <strong>{facility.name}</strong>
                   <small>{facility.state} · {facility.webHits} web hits · {facility.contradictions} contradictions</small>
+                  <em>{facility.matchedEvidence ?? "No citation span available."}</em>
                 </span>
                 <span className={`score-chip ${bandClass[facility.band]}`}>{facility.score}</span>
               </button>
@@ -356,6 +381,17 @@ export default function Dashboard() {
             <>
               <h2>{selected.name}</h2>
               <p>{selected.summary}</p>
+              <div className="why-card">
+                <span>Why this matched</span>
+                <p>{selected.matchedEvidence ?? "No citation span available."}</p>
+                {!!selected.matchedTerms?.length && (
+                  <div className="term-row">
+                    {selected.matchedTerms.map((term) => (
+                      <small key={term}>{term}</small>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div className="ci-card">
                 <span>Confidence interval</span>
                 <div className="ci-line">
@@ -375,6 +411,18 @@ export default function Dashboard() {
                 <div><strong>{selected.webHits}</strong><span>Web hits</span></div>
                 <div><strong>{selected.contradictions}</strong><span>Contradictions</span></div>
                 <div><strong>{selected.outliers}</strong><span>Outliers</span></div>
+              </div>
+              <div className="reason-card">
+                <span>Reason codes</span>
+                {selected.reasonCodes?.length ? (
+                  <div className="term-row">
+                    {selected.reasonCodes.map((code) => (
+                      <small key={code}>{code}</small>
+                    ))}
+                  </div>
+                ) : (
+                  <p>No negative reason codes for this facility.</p>
+                )}
               </div>
             </>
           ) : (

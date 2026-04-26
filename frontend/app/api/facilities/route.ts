@@ -74,6 +74,50 @@ function parseTrustScore(summary: string) {
   return match ? Number(match[1]) : 0;
 }
 
+function parseStringArray(value: unknown): string[] {
+  if (!value) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value.map(String).filter(Boolean);
+  }
+  const text = String(value).trim();
+  if (!text || text === "[]") {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) {
+      return parsed.map(String).filter(Boolean);
+    }
+  } catch {
+    // Spark SQL may return arrays as plain strings; fall through to cleanup.
+  }
+  return text
+    .replace(/^\[/, "")
+    .replace(/\]$/, "")
+    .split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
+    .map((item) => item.replace(/^"|"$/g, "").trim())
+    .filter(Boolean);
+}
+
+function pickEvidence(citations: string[], terms: string[]) {
+  const normalizedTerms = terms.map((term) => term.toLowerCase());
+  const match = citations.find((citation) =>
+    normalizedTerms.some((term) => citation.toLowerCase().includes(term)),
+  );
+  return cleanEvidence(match ?? citations[0] ?? "No citation span available for this row.");
+}
+
+function cleanEvidence(value: string) {
+  return value
+    .replace(/\s+\["[\s\S]*$/, "")
+    .replace(/\s+\[[A-Za-z][\s\S]*$/, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 220);
+}
+
 function deriveIntent(rawQuery: string): SearchIntent {
   const q = rawQuery.toLowerCase().replace(/[-_]/g, " ");
   const terms = new Set<string>();
@@ -159,8 +203,10 @@ function deriveIntent(rawQuery: string): SearchIntent {
   };
 }
 
-function rowToFacility(row: unknown[], query: string) {
+function rowToFacility(row: unknown[], query: string, terms: string[]) {
   const summary = String(row[5] ?? "");
+  const reasonCodes = parseStringArray(row[8]);
+  const citationSpans = parseStringArray(row[9]);
   return {
     id: String(row[0] ?? ""),
     name: String(row[1] ?? ""),
@@ -174,11 +220,17 @@ function rowToFacility(row: unknown[], query: string) {
     summary,
     ciLow: Number(row[6] ?? 0) || undefined,
     ciHigh: Number(row[7] ?? 0) || undefined,
+    reasonCodes,
+    citationSpans,
+    matchedEvidence: pickEvidence(citationSpans, terms),
+    matchedTerms: terms,
   };
 }
 
-function vectorRowToFacility(row: unknown[], query: string) {
+function vectorRowToFacility(row: unknown[], query: string, terms: string[]) {
   const summary = String(row[4] ?? "");
+  const reasonCodes = parseStringArray(row[7]);
+  const citationSpans = parseStringArray(row[8]);
   return {
     id: String(row[0] ?? ""),
     name: String(row[1] ?? ""),
@@ -192,6 +244,10 @@ function vectorRowToFacility(row: unknown[], query: string) {
     summary,
     ciLow: Number(row[5] ?? 0) || undefined,
     ciHigh: Number(row[6] ?? 0) || undefined,
+    reasonCodes,
+    citationSpans,
+    matchedEvidence: pickEvidence(citationSpans, terms),
+    matchedTerms: terms,
   };
 }
 
@@ -221,6 +277,8 @@ async function queryVectorSearch(
           "human_summary",
           "confidence_interval_low",
           "confidence_interval_high",
+          "reason_codes",
+          "citation_spans",
         ],
         num_results: 30,
       }),
@@ -234,7 +292,7 @@ async function queryVectorSearch(
 
   const payload = (await response.json()) as DatabricksStatementResponse;
   return (payload.result?.data_array ?? [])
-    .map((row) => vectorRowToFacility(row, query))
+    .map((row) => vectorRowToFacility(row, query, intent.terms))
     .filter((facility) => {
       const stateMatches = state === "all" || facility.state === state;
       const scoreMatches = facility.score >= minScore;
@@ -294,7 +352,9 @@ async function queryGoldSql(
       score_band,
       human_summary,
       confidence_interval_low,
-      confidence_interval_high
+      confidence_interval_high,
+      reason_codes,
+      citation_spans
     FROM ${GOLD_TABLE}
     WHERE score >= ${minScore}
       ${stateClause}
@@ -328,7 +388,7 @@ async function queryGoldSql(
   }
 
   const payload = (await response.json()) as DatabricksStatementResponse;
-  return (payload.result?.data_array ?? []).map((row) => rowToFacility(row, query));
+  return (payload.result?.data_array ?? []).map((row) => rowToFacility(row, query, intent.terms));
 }
 
 export async function GET(request: Request) {

@@ -524,6 +524,15 @@ button {
   margin-bottom: 4px;
 }
 
+.result-main em {
+  display: block;
+  margin-top: 6px;
+  color: var(--green);
+  font-size: 0.82rem;
+  font-style: normal;
+  line-height: 1.45;
+}
+
 .score-chip {
   display: grid;
   height: 44px;
@@ -550,11 +559,43 @@ button {
   background: #fff;
 }
 
-.ci-card > span {
+.ci-card > span,
+.why-card > span,
+.reason-card > span {
   display: block;
   margin-bottom: 12px;
   color: var(--muted);
   font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.why-card,
+.reason-card {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.why-card p,
+.reason-card p {
+  margin: 0;
+}
+
+.term-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.term-row small {
+  border-radius: 999px;
+  color: var(--green);
+  background: var(--green-soft);
+  padding: 6px 9px;
+  font-size: 0.74rem;
   font-weight: 800;
 }
 
