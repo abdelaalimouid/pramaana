@@ -163,12 +163,17 @@ PRAMAANA completed the full Databricks pipeline over the Virtue Foundation India
 | Tavily live web checks | high-signal facilities | 300 searches |
 | Mosaic Vector Search | `pramaana.gold.facilities_scored_vs_index` | Online, 10,000 indexed rows |
 
-Score distribution:
+Trust interpretation:
 
-| Trust band | Count |
-|---|---:|
-| High | 126 |
-| Medium | 9,854 |
-| Low | 20 |
+| Category | Count | Meaning |
+|---|---:|---|
+| High trust | 126 | Strongest candidates for action: high score with fewer unresolved verification concerns |
+| Medium trust | 9,854 | Potentially useful facilities that should be verified before urgent referral |
+| Low / suspicious score | 20 | Facilities below the medium score threshold |
+
+Important: “medium” is not a clean bill of health. PRAMAANA also surfaces
+medium-scored facilities with contradiction flags, missing specialist signals,
+outlier warnings, or weak web corroboration. The dashboard’s suspicious queries
+use those review signals, not only the final low-score count.
 
 
