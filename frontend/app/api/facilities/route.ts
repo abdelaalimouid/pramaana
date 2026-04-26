@@ -106,16 +106,85 @@ function pickEvidence(citations: string[], terms: string[]) {
   const match = citations.find((citation) =>
     normalizedTerms.some((term) => citation.toLowerCase().includes(term)),
   );
-  return cleanEvidence(match ?? citations[0] ?? "No citation span available for this row.");
+  const evidence = cleanEvidence(match ?? citations[0] ?? "");
+  if (!evidence || evidence.length < 24 || /^\([^)]*\)$/.test(evidence)) {
+    return "No clear source snippet was available, but the facility matched the scored Gold record.";
+  }
+  return evidence;
+}
+
+function hasUsefulEvidence(facility: ReturnType<typeof rowToFacility>) {
+  return Boolean(
+    facility.matchedEvidence &&
+      facility.matchedEvidence !== "No citation span available for this row.",
+  );
+}
+
+function rankFacilities<T extends ReturnType<typeof rowToFacility>>(facilities: T[], intent: SearchIntent) {
+  return [...facilities].sort((a, b) => {
+    const bandBoost = (facility: T) => {
+      if (intent.band === "high") return facility.band === "high" ? 40 : 0;
+      if (intent.riskIntent) return ["low", "suspicious"].includes(facility.band) ? 40 : 0;
+      return 0;
+    };
+    const evidenceBoost = (facility: T) => (hasUsefulEvidence(facility) ? 8 : 0);
+    const webBoost = (facility: T) => Math.min(facility.webHits, 10);
+    const contradictionBoost = (facility: T) =>
+      intent.contradictionIntent ? facility.contradictions * 12 : 0;
+    const penalty = (facility: T) =>
+      intent.webProofIntent && facility.webHits === 0 ? 50 : 0;
+    const rankScore = (facility: T) =>
+      facility.score +
+      bandBoost(facility) +
+      evidenceBoost(facility) +
+      webBoost(facility) +
+      contradictionBoost(facility) -
+      facility.outliers * 4 -
+      penalty(facility);
+
+    return rankScore(b) - rankScore(a);
+  });
 }
 
 function cleanEvidence(value: string) {
-  return value
+  const cleaned = value
+    .replace(/^\[(staffing|equipment|capabilities)\]\s*/i, "")
     .replace(/\s+\["[\s\S]*$/, "")
     .replace(/\s+\[[A-Za-z][\s\S]*$/, "")
+    .split('","')[0]
+    .replace(/^"+|"+$/g, "")
+    .replace(/\]+$/g, "")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 220);
+  return cleaned ? cleaned.charAt(0).toUpperCase() + cleaned.slice(1) : cleaned;
+}
+
+function userFriendlyReason(code: string) {
+  const labels: Record<string, string> = {
+    NO_WEB_PRESENCE: "No live web evidence was found for this facility.",
+    NO_SOCIAL_PRESENCE: "No social media signal was present in the source data.",
+    SURGERY_NO_ANESTHESIOLOGIST:
+      "Surgery is claimed, but no anesthesiologist is listed.",
+    DIALYSIS_NO_NEPHROLOGIST:
+      "Dialysis is claimed, but no nephrologist is listed.",
+    NEONATAL_NO_NEONATOLOGIST:
+      "Neonatal care is claimed, but no neonatologist is listed.",
+    ONCOLOGY_NO_ONCOLOGIST:
+      "Oncology care is claimed, but no oncologist is listed.",
+    ICU_NO_DOCTOR: "ICU is claimed, but no full-time doctor is listed.",
+  };
+
+  if (labels[code]) {
+    return labels[code];
+  }
+  if (code.includes("OUTLIER_FOR_PIN")) {
+    return "This claim looks unusual compared with nearby facilities in the same PIN code.";
+  }
+  return code
+    .toLowerCase()
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function deriveIntent(rawQuery: string): SearchIntent {
@@ -221,6 +290,7 @@ function rowToFacility(row: unknown[], query: string, terms: string[]) {
     ciLow: Number(row[6] ?? 0) || undefined,
     ciHigh: Number(row[7] ?? 0) || undefined,
     reasonCodes,
+    reviewNotes: reasonCodes.map(userFriendlyReason),
     citationSpans,
     matchedEvidence: pickEvidence(citationSpans, terms),
     matchedTerms: terms,
@@ -245,6 +315,7 @@ function vectorRowToFacility(row: unknown[], query: string, terms: string[]) {
     ciLow: Number(row[5] ?? 0) || undefined,
     ciHigh: Number(row[6] ?? 0) || undefined,
     reasonCodes,
+    reviewNotes: reasonCodes.map(userFriendlyReason),
     citationSpans,
     matchedEvidence: pickEvidence(citationSpans, terms),
     matchedTerms: terms,
@@ -291,7 +362,7 @@ async function queryVectorSearch(
   }
 
   const payload = (await response.json()) as DatabricksStatementResponse;
-  return (payload.result?.data_array ?? [])
+  const facilities = (payload.result?.data_array ?? [])
     .map((row) => vectorRowToFacility(row, query, intent.terms))
     .filter((facility) => {
       const stateMatches = state === "all" || facility.state === state;
@@ -303,8 +374,9 @@ async function queryVectorSearch(
       const contradictionMatches = !intent.contradictionIntent || facility.contradictions > 0;
       const webMatches = !intent.webProofIntent || facility.webHits > 0;
       return stateMatches && scoreMatches && bandMatches && contradictionMatches && webMatches;
-    })
-    .slice(0, 10);
+    });
+
+  return rankFacilities(facilities, intent).slice(0, 10);
 }
 
 async function queryGoldSql(
@@ -388,7 +460,10 @@ async function queryGoldSql(
   }
 
   const payload = (await response.json()) as DatabricksStatementResponse;
-  return (payload.result?.data_array ?? []).map((row) => rowToFacility(row, query, intent.terms));
+  return rankFacilities(
+    (payload.result?.data_array ?? []).map((row) => rowToFacility(row, query, intent.terms)),
+    intent,
+  );
 }
 
 export async function GET(request: Request) {

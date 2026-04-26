@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
 type Band = "high" | "medium" | "low" | "suspicious";
@@ -19,6 +19,7 @@ type Facility = {
   ciLow?: number;
   ciHigh?: number;
   reasonCodes?: string[];
+  reviewNotes?: string[];
   citationSpans?: string[];
   matchedEvidence?: string;
   matchedTerms?: string[];
@@ -40,8 +41,9 @@ const DEMO_FACILITIES: Facility[] = [
     ciLow: 58,
     ciHigh: 90,
     reasonCodes: [],
+    reviewNotes: [],
     citationSpans: ["[capabilities] dialysis centre with corroborated web presence"],
-    matchedEvidence: "[capabilities] dialysis centre with corroborated web presence",
+    matchedEvidence: "Dialysis centre with corroborated web presence",
     matchedTerms: ["dialysis"],
     summary:
       "Dr. Mudit Khurana Dialysis Centre scores 80/100 [HIGH]. Web hits: 10. Contradictions: 0. Outlier flags: 0.",
@@ -59,8 +61,9 @@ const DEMO_FACILITIES: Facility[] = [
     ciLow: 62,
     ciHigh: 91,
     reasonCodes: [],
+    reviewNotes: [],
     citationSpans: ["[capabilities] dialysis clinic with corroborated web presence"],
-    matchedEvidence: "[capabilities] dialysis clinic with corroborated web presence",
+    matchedEvidence: "Dialysis clinic with corroborated web presence",
     matchedTerms: ["dialysis"],
     summary:
       "Apollo Dialysis Clinic, S.S Hospitals scores 80/100 [HIGH]. Web hits: 10. Contradictions: 0. Outlier flags: 0.",
@@ -78,8 +81,9 @@ const DEMO_FACILITIES: Facility[] = [
     ciLow: 55,
     ciHigh: 88,
     reasonCodes: [],
+    reviewNotes: [],
     citationSpans: ["[capabilities] diagnostic and dialysis center"],
-    matchedEvidence: "[capabilities] diagnostic and dialysis center",
+    matchedEvidence: "Diagnostic and dialysis center",
     matchedTerms: ["dialysis"],
     summary:
       "I Care Diagnostic and Dialysis Center scores 78/100 [HIGH]. Web hits: 10. Contradictions: 0. Outlier flags: 0.",
@@ -97,8 +101,9 @@ const DEMO_FACILITIES: Facility[] = [
     ciLow: 48,
     ciHigh: 84,
     reasonCodes: [],
+    reviewNotes: [],
     citationSpans: ["[capabilities] dialysis centre"],
-    matchedEvidence: "[capabilities] dialysis centre",
+    matchedEvidence: "Dialysis centre",
     matchedTerms: ["dialysis"],
     summary:
       "GR Dialysis Centre scores 73/100 [HIGH]. Web hits: 10. Contradictions: 0. Outlier flags: 0.",
@@ -116,8 +121,9 @@ const DEMO_FACILITIES: Facility[] = [
     ciLow: 50,
     ciHigh: 84,
     reasonCodes: [],
+    reviewNotes: [],
     citationSpans: ["[capabilities] dialysis center"],
-    matchedEvidence: "[capabilities] dialysis center",
+    matchedEvidence: "Dialysis center",
     matchedTerms: ["dialysis"],
     summary:
       "Hfrc Dialysis Center scores 73/100 [HIGH]. Web hits: 10. Contradictions: 0. Outlier flags: 0.",
@@ -174,6 +180,11 @@ export default function Dashboard() {
   const [source, setSource] = useState("Mosaic Vector Search ready");
   const [results, setResults] = useState<Facility[]>(DEMO_FACILITIES);
   const [selectedId, setSelectedId] = useState(DEMO_FACILITIES[0].id);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const selected = useMemo(
     () => results.find((facility) => facility.id === selectedId) ?? results[0],
@@ -367,7 +378,7 @@ export default function Dashboard() {
                 <span className="result-main">
                   <strong>{facility.name}</strong>
                   <small>{facility.state} · {facility.webHits} web hits · {facility.contradictions} contradictions</small>
-                  <em>{facility.matchedEvidence ?? "No citation span available."}</em>
+                  {mounted && <em>{facility.matchedEvidence ?? "No citation span available."}</em>}
                 </span>
                 <span className={`score-chip ${bandClass[facility.band]}`}>{facility.score}</span>
               </button>
@@ -382,7 +393,7 @@ export default function Dashboard() {
               <h2>{selected.name}</h2>
               <p>{selected.summary}</p>
               <div className="why-card">
-                <span>Why this matched</span>
+                <span>Evidence found</span>
                 <p>{selected.matchedEvidence ?? "No citation span available."}</p>
                 {!!selected.matchedTerms?.length && (
                   <div className="term-row">
@@ -413,15 +424,15 @@ export default function Dashboard() {
                 <div><strong>{selected.outliers}</strong><span>Outliers</span></div>
               </div>
               <div className="reason-card">
-                <span>Reason codes</span>
-                {selected.reasonCodes?.length ? (
+                <span>Review notes</span>
+                {selected.reviewNotes?.length ? (
                   <div className="term-row">
-                    {selected.reasonCodes.map((code) => (
-                      <small key={code}>{code}</small>
+                    {selected.reviewNotes.map((note) => (
+                      <small key={note}>{note}</small>
                     ))}
                   </div>
                 ) : (
-                  <p>No negative reason codes for this facility.</p>
+                  <p>No issues were flagged for this facility.</p>
                 )}
               </div>
             </>
