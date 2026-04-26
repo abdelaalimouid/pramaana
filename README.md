@@ -111,7 +111,7 @@ PRAMAANA shows her:
 ## Setup
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/abdelaalimouid/pramaana.git
 cd pramaana
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
@@ -146,3 +146,29 @@ cp .env.example .env
 
 Code freeze: Sunday 11:00 AM Casablanca (6:00 AM ET)
 Submission deadline: Sunday 2:00 PM Casablanca (9:00 AM ET)
+
+---
+
+## Final Hackathon Results
+
+PRAMAANA completed the full Databricks pipeline over the Virtue Foundation India
+10k facility dataset:
+
+| Layer | Output | Result |
+|---|---:|---|
+| Bronze raw facilities | `pramaana.bronze.facilities_raw` | 10,000 rows |
+| Silver extracted claims | `pramaana.silver.facilities_extracted` | 10,000 rows |
+| Silver validation flags | `pramaana.silver.facilities_validated` | 10,000 rows |
+| Gold trust scores | `pramaana.gold.facilities_scored` | 10,000 rows |
+| Tavily live web checks | high-signal facilities | 300 searches |
+| Mosaic Vector Search | `pramaana.gold.facilities_scored_vs_index` | Online, 10,000 indexed rows |
+
+Score distribution:
+
+| Trust band | Count |
+|---|---:|
+| High | 126 |
+| Medium | 9,854 |
+| Low | 20 |
+
+

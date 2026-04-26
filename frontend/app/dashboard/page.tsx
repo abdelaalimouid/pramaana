@@ -142,10 +142,10 @@ const STATES = [
 ];
 
 const PROMPTS = [
-  "high trust dialysis centers",
+  "high trust dialysis centers in Bihar",
   "suspicious ICU claims",
-  "oncology facilities with web proof",
   "emergency surgery contradictions",
+  "oncology facilities with web proof",
 ];
 
 const statePosition: Record<string, [number, number]> = {
@@ -265,8 +265,9 @@ export default function Dashboard() {
           <p className="section-label">Ask PRAMAANA</p>
           <h1>Search verified healthcare capability.</h1>
           <p>
-            Natural-language search uses Mosaic Vector Search first, with
-            Databricks SQL as the fallback.
+            Ask a plain-English question. PRAMAANA searches the Mosaic Vector
+            Search index first, then falls back to the scored Gold table when a
+            precise filter is needed.
           </p>
 
           <div className="prompt-row">
@@ -343,7 +344,7 @@ export default function Dashboard() {
               <p className="section-label">Capability Map</p>
               <h2>{results.length} matched facilities</h2>
             </div>
-            <span className={`source-badge source-${status}`}>{status === "live" ? "Live" : "Demo"}</span>
+            <span className={`source-badge source-${status}`}>{status === "live" ? "Live data" : "Demo"}</span>
           </div>
 
           <div className="map-canvas">
@@ -416,7 +417,7 @@ export default function Dashboard() {
         <section className="results-card-clean">
           <div className="section-heading">
             <div>
-              <p className="section-label">Ranked Results</p>
+              <p className="section-label">Ranked action list</p>
               <h2>Recommended facilities</h2>
             </div>
           </div>
@@ -441,13 +442,13 @@ export default function Dashboard() {
         </section>
 
         <aside className="evidence-card-clean">
-          <p className="section-label">Evidence</p>
+          <p className="section-label">Trust evidence</p>
           {selected ? (
             <>
               <h2>{selected.name}</h2>
               <p>{selected.summary}</p>
               <div className="why-card">
-                <span>Evidence found</span>
+                <span>Source evidence</span>
                 <p>{selected.matchedEvidence ?? "No citation span available."}</p>
                 {!!selected.matchedTerms?.length && (
                   <div className="term-row">
@@ -478,7 +479,7 @@ export default function Dashboard() {
                 <div><strong>{selected.outliers}</strong><span>Outliers</span></div>
               </div>
               <div className="reason-card">
-                <span>Review notes</span>
+                <span>Human-readable review notes</span>
                 {selected.reviewNotes?.length ? (
                   <div className="term-row">
                     {selected.reviewNotes.map((note) => (
