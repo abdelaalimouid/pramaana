@@ -92,10 +92,30 @@ except Exception as e:
 
 # COMMAND ----------
 
-# Trigger initial sync
-index = vs_client.get_index(endpoint_name=ENDPOINT_NAME, index_name=VECTOR_INDEX_NAME)
-index.sync()
-print("Index sync triggered. Check endpoint status in the Databricks UI.")
+# Wait for index to become ready before triggering sync
+for attempt in range(24):
+    try:
+        index = vs_client.get_index(endpoint_name=ENDPOINT_NAME, index_name=VECTOR_INDEX_NAME)
+        if hasattr(index, 'describe') and index.describe().get('status', {}).get('ready', False):
+            print(f"Vector index is ready: {VECTOR_INDEX_NAME}")
+            break
+        else:
+            print(f"Waiting for index to be ready ({attempt + 1}/24)...")
+            time.sleep(15)
+    except Exception as exc:
+        print(f"Waiting for index ({attempt + 1}/24): {exc}")
+        time.sleep(15)
+else:
+    print(f"⚠️  Index {VECTOR_INDEX_NAME} is not yet ready. You may need to wait longer and run the sync manually.")
+    index = None
+
+# Trigger initial sync if index is ready
+if index is not None:
+    try:
+        index.sync()
+        print("Index sync triggered. Check endpoint status in the Databricks UI.")
+    except Exception as exc:
+        print(f"Sync may not be needed or failed: {exc}")
 
 # COMMAND ----------
 
@@ -120,3 +140,14 @@ except Exception as exc:
         ORDER BY score DESC
         LIMIT 5
     """))
+
+# COMMAND ----------
+
+spark.sql("""
+SELECT facility_id, name, state, score, score_band, human_summary
+FROM pramaana.gold.facilities_scored
+WHERE lower(human_summary) LIKE '%dialysis%'
+  AND score >= 45
+ORDER BY score DESC
+LIMIT 5
+""").show(truncate=False)
